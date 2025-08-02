@@ -1,0 +1,93 @@
+#----------------------------------
+# Purpose: Luxor STAR Config input
+# Author: Harish Kumar R - nxf67811
+# harishkumar.rajendrababu@nxp.com
+#----------------------------------
+
+misc_settings:
+  # Optional input - Directory where STAR reports are to e written
+  # leave it empty if the reports are to e written to current dir
+  output_dir: ""
+
+mail_settings:
+  # Email IDs in the TO address bar
+  to_list:
+    - "harishkumar.rajendrababu1@nxp.com"
+  cc_list:
+  bcc_list:
+
+timing_query_settings:
+  # Allowed values are none/path/exh
+  pba_mode: path
+  # nworst settings
+  setup_nworst  : 1
+  hold_nworst  : 1
+  # report setup slack lesser than : <integer/float>
+  setup_slack_lt : 0
+  # report hold slack lesser than : <integer/float>
+  hold_slack_lt : 0
+  # report setup vio max_paths limit : <integer>
+  # You can give any big number but keep in mind that
+  # the STAR run times can increase exponentially
+  setup_max_paths : 10000000
+  # report hold vio max_paths limit : <integer>
+  hold_max_paths : 100
+  # Path type selections. Keep only the required
+  #path_types : 
+  #  - "reg_to_reg"
+  #  - "reg_to_out"
+  #  - "in_to_reg"
+  #  - "in_to_out" 
+  path_types : 
+    - reg_to_out
+    - in_to_reg
+    - reg_to_reg
+  # In order to avoid writting huge reports consuming 
+  # terabytes of disk space, user can limit the number  
+  # of verbose paths written for each category by the 
+  # integer number specified to this setting. 
+  # This will not affect the FEP/NVP counts in Index 
+  # page
+  verbose_rpt_max_paths : 100
+  # Indicate which reporting types to be enabled
+  # Available options
+  #     - summary
+  #     - verbose
+  # Ex., To dump only summary reports,
+  # report_types
+  #     - summary
+  # Ex., To dump only verbose reports,
+  #     - verbose
+  rpt_types :
+    - summary
+
+# Keep the keys very short, max 3 to 4 characters long
+# Order is not important 
+star_hier_map:
+  hscs : hscs_top/
+  rtu0 : rtu_top_0/
+  rtu1 : rtu_top_1/
+  rtu2 : rtu_top_2/
+  coss : coss_wrapper_top/
+  aps0 : aps_top_0/
+  aps1 : aps_top_1/
+  aps2 : aps_top_2/
+  aps3 : aps_top_3/
+  cis  : cis_top/
+  mms0 : mms_top_0/
+  mms1 : mms_top_1/
+  nwacs: nwacs_wrapper_top/
+  rcu  : rcu_top/
+
+# Keep the keys very short
+star_mode_grp:
+  FUNC:
+    - FUNC
+  SHIFT:
+    - ATPG_SHIFT
+  ATSPEED:
+    - ATPG_ATSPEED
+  STUCKAT:
+    - ATPG_STUCKAT
+  MBIST_TCU:
+    - MBIST_TCU
