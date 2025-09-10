@@ -1,0 +1,19 @@
+
+STAR_release_003 - 5th April, 2025
+  - Update user preference to dump summary or verbose report
+  - Allow user to limit the verbose report max paths
+  - Automatically switch printing summary file pointers in index incase verbose reports not available
+
+STAR_release_002 - 25th March, 2025
+  - Avoids dumping file names with clock names
+    Luxor is using clock names that are too big and
+    therefore the acceptable file anme limit in TCL
+    gets exceeded.
+  - Use mutt executable absolute path from /pkg/OSS-mutt
+  - Small bug fixes
+ 
+STAR_release_001
+  - Consolidate TCL files into single file
+  - Enable STAR email notification
+
+
