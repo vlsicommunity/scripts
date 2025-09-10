@@ -58,6 +58,8 @@ proc ::star::printBanner {} {
   puts ""
   after 2000
 
+
+
 }
 
 
