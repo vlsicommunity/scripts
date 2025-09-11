@@ -1,0 +1,139 @@
+# pin_distance.tcl — Compute Manhattan (L1) and Euclidean (L2) distances between two pins.
+# Uses: get_attr -class pin <pin> x_coordinate/y_coordinate
+# Works in environments where 'get_attr' is available (as requested).
+
+# ----------------------------
+# Utilities / Validation
+# ----------------------------
+proc _validate_points {p1 p2} {
+    if {[llength $p1] == 0 || [llength $p2] == 0} {
+        error "Points must be non-empty lists."
+    }
+    if {[llength $p1] != [llength $p2]} {
+        error "Points must have the same dimension: got [llength $p1] and [llength $p2]."
+    }
+    foreach coord [concat $p1 $p2] {
+        if {![string is double -strict $coord]} {
+            error "Non-numeric coordinate encountered: '$coord'"
+        }
+    }
+}
+
+# Manhattan (L1) in N-D
+proc manhattan_distance {p1 p2} {
+    _validate_points $p1 $p2
+    set sum 0.0
+    foreach a $p1 b $p2 {
+        set sum [expr {$sum + abs($a - $b)}]
+    }
+    return $sum
+}
+
+# Euclidean (L2) in N-D
+proc euclidean_distance {p1 p2} {
+    _validate_points $p1 $p2
+    set sumsq 0.0
+    foreach a $p1 b $p2 {
+        set d [expr {$a - $b}]
+        set sumsq [expr {$sumsq + $d*$d}]
+    }
+    return [expr {sqrt($sumsq)}]
+}
+
+# 2D convenience wrappers
+proc manhattan2d {x1 y1 x2 y2} {
+    return [manhattan_distance [list $x1 $y1] [list $x2 $y2]]
+}
+proc euclidean2d {x1 y1 x2 y2} {
+    return [euclidean_distance [list $x1 $y1] [list $x2 $y2]]
+}
+
+# ----------------------------
+# Pin coordinate fetch helpers
+# ----------------------------
+proc _ensure_get_attr_available {} {
+    if {[string equal "" [info commands get_attr]]} {
+        error "Command 'get_attr' not found in this shell. This script expects:\n  get_attr -class pin <pin> x_coordinate|y_coordinate"
+    }
+}
+
+proc _get_pin_xy {pin} {
+    _ensure_get_attr_available
+
+    # Query coordinates (may return a list if the name expands to multiple pins)
+    set xs [get_attr -class pin $pin x_coordinate]
+    set ys [get_attr -class pin $pin y_coordinate]
+
+    if {[llength $xs] != 1 || [llength $ys] != 1} {
+        error "Pin '$pin' matched [llength $xs] x and [llength $ys] y results. Please provide a unique pin name (use full/hierarchical path)."
+    }
+
+    set x [lindex $xs 0]
+    set y [lindex $ys 0]
+
+    if {![string is double -strict $x] || ![string is double -strict $y]} {
+        error "Coordinates for pin '$pin' are not numeric: x='$x' y='$y'"
+    }
+
+    return [list $x $y]
+}
+
+# ----------------------------
+# Core API
+# ----------------------------
+# Returns a dict with: pin1 pin2 x1 y1 x2 y2 dx dy L1 L2
+proc pin_distance {pin1 pin2} {
+    set p1 [_get_pin_xy $pin1]
+    set p2 [_get_pin_xy $pin2]
+
+    lassign $p1 x1 y1
+    lassign $p2 x2 y2
+
+    set dx [expr {$x2 - $x1}]
+    set dy [expr {$y2 - $y1}]
+    set L1 [manhattan2d $x1 $y1 $x2 $y2]
+    set L2 [euclidean2d  $x1 $y1 $x2 $y2]
+
+    return [dict create \
+        pin1 $pin1 pin2 $pin2 \
+        x1 $x1   y1 $y1   \
+        x2 $x2   y2 $y2   \
+        dx $dx   dy $dy   \
+        L1 $L1   L2 $L2  ]
+}
+
+# Pretty printer
+proc print_pin_distance {pin1 pin2} {
+    set info [pin_distance $pin1 $pin2]
+    dict with info {
+        puts "---------------------------------------------"
+        puts "  Pin Distance"
+        puts "---------------------------------------------"
+        puts "Pin1: $pin1"
+        puts "  x1: $x1"
+        puts "  y1: $y1"
+        puts "Pin2: $pin2"
+        puts "  x2: $x2"
+        puts "  y2: $y2"
+        puts ""
+        puts "Δx:  $dx"
+        puts "Δy:  $dy"
+        puts "L1 (Manhattan): $L1"
+        puts "L2 (Euclidean): $L2"
+        puts "---------------------------------------------"
+        puts "Note: Units are whatever 'get_attr ... x_coordinate/y_coordinate' returns in this tool."
+    }
+}
+
+# ----------------------------
+# CLI mode (if executed directly): tclsh pin_distance.tcl <pin1> <pin2>
+# ----------------------------
+if {[info exists argv0] && [string equal [info script] $argv0]} {
+    if {[llength $argv] != 2} {
+        puts "Usage: tclsh pin_distance.tcl <pin1> <pin2>"
+        puts "Example: tclsh pin_distance.tcl U_TOP/U1/A U_TOP/U2/Z"
+        return
+    }
+    lassign $argv pin1 pin2
+    print_pin_distance $pin1 $pin2
+}
