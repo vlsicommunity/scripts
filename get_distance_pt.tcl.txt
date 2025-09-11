@@ -94,6 +94,10 @@ proc pin_distance {pin1 pin2} {
     set L1 [manhattan2d $x1 $y1 $x2 $y2]
     set L2 [euclidean2d  $x1 $y1 $x2 $y2]
 
+    # Consider Database distance units DBU
+    set var_dbu_per_micron 2000
+    set L1 [expr {double($L1)/$var_dbu_per_micron}]
+    set L2 [expr {double($L2)/$var_dbu_per_micron}]
     return [dict create \
         pin1 $pin1 pin2 $pin2 \
         x1 $x1   y1 $y1   \
