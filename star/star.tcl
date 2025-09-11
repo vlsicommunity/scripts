@@ -475,6 +475,22 @@ proc ::star::validateInputs {} {
           timing_query_settings rpt_types]
   }
 
+  if {![dict exist $::star::config \
+	 timing_query_settings exclude_in2reg_from_reg2reg]} {
+
+    puts -nonewline "STAR> Warning: Required config "
+    puts -nonewline "variable -->exclude_in2reg_from_reg2reg<--"
+    puts " not found under timing_query_settings."
+    puts "STAR> Using default setting -->1<-- for exclude_in2reg_from_reg2reg" 
+    set ::star::timing_exclude_in2reg_from_reg2reg 1
+
+  } else {
+    set ::star::timing_exclude_in2reg_from_reg2reg \
+      [dict get $::star::config \
+          timing_query_settings exclude_in2reg_from_reg2reg]
+  }
+
+
   # Checks to be performed when the shell is a dmsa
   if {$::star::v_tool_mode eq "primetime_master"} {
 
@@ -824,9 +840,9 @@ proc ::star::writeTxtIndex {} {
 
       if {[llength $arrayKeys]} {
 
-	#puts "debug: modes are $modes"
+	      #puts "debug: modes are $modes"
    
-	foreach mode $modes {
+	      foreach mode $modes {
 
           puts "STAR> Writing index file for "
           puts "STAR>\t $mode"
@@ -837,35 +853,35 @@ proc ::star::writeTxtIndex {} {
 
 
           puts $fp "#----------------------------------------"
-	  puts $fp "#         Overview Table                 "
+	        puts $fp "#         Overview Table                 "
           puts $fp "#----------------------------------------"
 
-	  puts $fp "[format "%10s %10s %15s   %-40s" \
+	        puts $fp "[format "%10s %10s %15s   %-40s" \
 		           "FEP" "WNS" "TNS" "Category"]"
 
           dict for {mainCat value} \
 	    [dict get $::star::catTreeTiming $modeGrp $delay] {
             
-	    #puts "debugX: $value"
+	        #puts "debugX: $value"
             dict for {hierCat value} $value {
 
-	      #puts "debugY : modeStats : $modeStats"
+	        #puts "debugY : modeStats : $modeStats"
 
-	      #puts "debugY: $value"
+	        #puts "debugY: $value"
 
-              if {$hierCat eq "mode_stats"} {
+          if {$hierCat eq "mode_stats"} {
 
-                set wns [dict get $value $mode "wns"]
-                set tns [dict get $value $mode "tns"]
-                set fep [dict get $value $mode "fep"]
+            set wns [dict get $value $mode "wns"]
+            set tns [dict get $value $mode "tns"]
+            set fep [dict get $value $mode "fep"]
 
-	        puts $fp \
+	          puts $fp \
 		  "[format "%10d %10.2f %15.2f   %-40s" \
 		          $fep $wns $tns $mainCat]"
 
-              }		      
-	    }
-          }
+          }		      
+	      }
+      }
 
 	  puts $fp ""
 
@@ -881,7 +897,7 @@ proc ::star::writeTxtIndex {} {
 	        if {$printOnce} { 
 	          puts $fp "#----------------------------------------"
 	          puts $fp "#        $mainCat Hierarchy Table        "
-                  puts $fp "#----------------------------------------"
+            puts $fp "#----------------------------------------"
 	          puts $fp ""
 		  puts $fp "[format "%10s %10s %15s  %-40s" \
 		           "FEP" "WNS" "TNS" "Category"]"
@@ -912,7 +928,7 @@ proc ::star::writeTxtIndex {} {
 	        if {$printOnce} { 
 	          puts $fp "#----------------------------------------"
 	          puts $fp "#        $mainCat Hierarchy+ClockGrp Table        "
-                  puts $fp "#----------------------------------------"
+            puts $fp "#----------------------------------------"
 	          puts $fp ""
 		  puts $fp "[format "%10s %10s %15s   %-20s  %-20s  %-30s  %-40s" \
 		    "FEP" "WNS" "TNS" "HierCat" "rptLnk" "ClkGrp" "ToClock:FromClock"]"
@@ -1996,39 +2012,45 @@ proc ::star::main {} {
 
 		  foreach var_path_type $::star::v_rpt_path_types {
 
-                    append_to_col pathCol \
-                      [get_timing_path \
+        set var_exclude_option ""
+        if {$var_path_type == "reg_to_reg" && \
+            $::star::timing_exclude_in2reg_from_reg2reg} {
+          set var_exclude_option "-exclude [all_inputs]" 
+        }
+
+        append_to_col pathCol \
+          [get_timing_path \
 		         -max_paths $max_paths \
-                         -slack_lesser $slack_lt \
-            	         -delay_type $delay \
+             -slack_lesser $slack_lt \
+             -delay_type $delay \
 		         -pba_mode $::star::timing_pba_mode \
-			 -start_end_type $var_path_type \
-		         -path_type full_clock_exp]
+			       -start_end_type $var_path_type \
+		         -path_type full_clock_exp \
+             $var_exclude_option]
 
 		  }
 
-	        }
+	  }
 
 		if {![regexp {Error} $null]} {
 
-
 		  if {$::star::debug} {
 
-                    set pathColSize [sizeof_col $pathCol]
+        set pathColSize [sizeof_col $pathCol]
 		    puts "STAR> Debug: pathcol size : $pathColSize"
 
 		  }
 
-                  ::star::processTpCol \
+      ::star::processTpCol \
 			  $modeGrp \
 			  $mode \
 			  $delay \
 			  $pathCol
 
-                  ::star::popCatTreeTiming
-                  ::star::writePyHandoff
-	          ::star::callStarPy
-	          ::star::writeTxtIndex
+      ::star::popCatTreeTiming
+      ::star::writePyHandoff
+	    ::star::callStarPy
+	    ::star::writeTxtIndex
 
 		} else {
 
@@ -2038,10 +2060,10 @@ proc ::star::main {} {
 		  puts "\t mode    : $mode"
 		  puts "\t delay   : $delay"
 
-                  puts "STAR> Debug: cmd --> get_timing_path"
+      puts "STAR> Debug: cmd --> get_timing_path"
 		  puts "\t -max_paths $max_paths "
-                  puts "\t -slack_lesser $slack_lt "
-            	  puts "\t -delay_type $delay "
+      puts "\t -slack_lesser $slack_lt "
+   	  puts "\t -delay_type $delay "
 		  puts "\t -pba_mode $::star::timing_pba_mode "
 		  puts "\t -path_type full_clock_exp"
 
