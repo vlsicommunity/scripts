@@ -60,11 +60,6 @@ timing_query_settings:
   #     - verbose
   rpt_types :
     - summary
-  # Enhancement : Exclude in2reg paths while gathering reg2reg 
-  # Allowed values are 1/0; 
-  # 1 = While reg2reg paths are pathered all in2reg paths are exluded (default)
-  # 0 = Does not exclude in2reg explicitily. 
-  exclude_in2reg_from_reg2reg : 1
 
 # Keep the keys very short, max 3 to 4 characters long
 # Order is not important 
