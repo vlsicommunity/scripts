@@ -1,0 +1,62 @@
+# Disk Monitor Configuration File
+# ================================
+# This file configures the disk usage monitoring and alerting system.
+
+# Email Configuration
+email:
+  # Domain for user email addresses (userid@domain)
+  domain: "nxp.com"
+  
+  # Sender email address for alerts
+  sender: "harishkumar.rajendrababu@nxp.com"
+  
+  # List of administrators/managers who always receive alerts
+  # These emails receive alerts for ALL monitored disks
+  administrators:
+    #- "admin@company.com"
+    #- "manager@company.com"
+    # Add more administrators as needed
+    # - "ops-team@company.com"
+
+# Logging Configuration
+logging:
+  # Path to log file (can be absolute or relative)
+  file: "disk_monitor.log"
+  
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+
+# Performance Configuration
+performance:
+  # Maximum parallel threads for du calculation
+  # Set to a number to cap workers, or remove/comment out for auto-calculation
+  # Auto mode: workers = min(num_directories, cpu_count * 2), capped at 16
+  # max_workers: 8  # Uncomment to set a fixed limit
+  
+  # Try to use disk quotas if available (much faster than du)
+  # Set to false to always use du command
+  use_quotas: true
+  
+  # Timeout in seconds for each du command per directory
+  # Increase for very large directories
+  du_timeout: 30000
+
+# Disk Configurations
+# Each disk entry requires:
+#   - path: The filesystem path to monitor
+#   - name: Human-readable name for the disk (used in alerts)
+#   - usage_limit_percent: Alert threshold (0-100)
+disks:
+  # Example disk configuration
+  - path: "/home/mx969_f1_be_sta_w01/users/"
+    name: "IMX96F1 STA Disk1"
+    usage_limit_percent: 70
+  
+  # Add more disks as needed
+  # - path: "/data/scratch"
+  #   name: "Scratch Space"
+  #   usage_limit_percent: 90
+  
+  # - path: "/home"
+  #   name: "Home Directories"
+  #   usage_limit_percent: 80
