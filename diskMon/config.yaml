@@ -10,10 +10,14 @@ email:
   # Sender email address for alerts
   sender: "harishkumar.rajendrababu@nxp.com"
   
-  # List of administrators/managers who always receive alerts
-  # These emails receive alerts for ALL monitored disks
+  # Size unit for displaying disk usage in emails
+  # Options: TB, GB, MB (default: TB)
+  size_unit: "TB"
+  
+  # List of administrators/managers who receive consolidated email
+  # These emails receive a summary of ALL monitored disks
   administrators:
-    #- "admin@company.com"
+    - "harishkumar.rajendrababu@nxp.com"
     #- "manager@company.com"
     # Add more administrators as needed
     # - "ops-team@company.com"
@@ -51,11 +55,10 @@ disks:
   - path: "/home/mx969_f1_be_sta_w01/users/"
     name: "IMX96F1 STA Disk1"
     usage_limit_percent: 70
-  
   # Add more disks as needed
-  # - path: "/data/scratch"
-  #   name: "Scratch Space"
-  #   usage_limit_percent: 90
+  - path: "/home/mx969_f1_be_sta_w51/users/"
+    name: "IMX96F1 STA Disk2"
+    usage_limit_percent: 60
   
   # - path: "/home"
   #   name: "Home Directories"

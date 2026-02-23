@@ -9,7 +9,9 @@ Features:
 - Parallel directory size calculation for faster execution
 - Disk quota support for instant results (if available)
 - Configurable thresholds per disk
-- Email alerts via mailx
+- Two email types: individual user emails and admin consolidated email
+- Configurable size units (TB, GB, MB)
+- Dynamic table alignment for proper column formatting
 
 Usage:
     python disk_monitor.py -c config.yaml
@@ -81,6 +83,10 @@ class DiskMonitor:
         if 'sender' not in email_config:
             print("ERROR: Missing 'sender' in email configuration")
             sys.exit(1)
+        
+        # Set default for size_unit
+        if 'size_unit' not in email_config:
+            email_config['size_unit'] = 'TB'
             
         # Set defaults for logging
         if 'logging' not in config:
@@ -93,8 +99,6 @@ class DiskMonitor:
         # Set defaults for performance
         if 'performance' not in config:
             config['performance'] = {}
-        if 'max_workers' not in config['performance']:
-            config['performance']['max_workers'] = 8
         if 'use_quotas' not in config['performance']:
             config['performance']['use_quotas'] = True
         if 'du_timeout' not in config['performance']:
@@ -206,6 +210,48 @@ class DiskMonitor:
         except (KeyError, OSError) as e:
             self.logger.warning(f"Could not determine owner of {path}: {e}")
             return None
+    
+    def get_user_full_name(self, username: str) -> str:
+        """
+        Get full name from system user database (GECOS field).
+        
+        The GECOS field typically contains: "Full Name,Room,Work Phone,Home Phone,Other"
+        This method extracts just the full name part.
+        
+        Args:
+            username: The username to look up
+            
+        Returns:
+            Full name if available, otherwise returns the username
+        """
+        try:
+            user_info = pwd.getpwnam(username)
+            gecos = user_info.pw_gecos
+            if gecos:
+                # GECOS format: "Full Name,Room,Work Phone,Home Phone,Other"
+                full_name = gecos.split(',')[0].strip()
+                if full_name:
+                    return full_name
+            return username  # Fall back to username if GECOS is empty
+        except KeyError:
+            # User not found in system database
+            return username
+        except Exception:
+            return username
+    
+    def get_user_email(self, username: str) -> str:
+        """
+        Get the email address for a user.
+        
+        Args:
+            username: The username to get email for
+            
+        Returns:
+            Email address (username@domain)
+        """
+        email_config = self.config.get('email', {})
+        domain = email_config.get('domain', 'company.com')
+        return f"{username}@{domain}"
     
     def _get_mount_point(self, path: str) -> str:
         """
@@ -564,18 +610,109 @@ class DiskMonitor:
         self.logger.info("Falling back to parallel du calculation...")
         return self.get_user_usage_parallel(disk_path)
     
-    def bytes_to_gb(self, bytes_val: int) -> float:
-        """Convert bytes to gigabytes."""
-        return bytes_val / (1024 ** 3)
-    
-    def format_size_gb(self, gb_val: float) -> str:
-        """Format size in GB with 2 decimal places."""
-        return f"{gb_val:.2f} GB"
-    
-    def generate_alert_email(self, disk_config: dict, usage_stats: tuple, 
-                            user_usage: List[Dict]) -> Tuple[str, str]:
+    def bytes_to_unit(self, bytes_val: int) -> Tuple[float, str]:
         """
-        Generate the alert email subject and body.
+        Convert bytes to the configured size unit.
+        
+        Args:
+            bytes_val: Size in bytes
+            
+        Returns:
+            Tuple of (value, unit_string)
+        """
+        email_config = self.config.get('email', {})
+        unit = email_config.get('size_unit', 'TB').upper()
+        
+        if unit == 'MB':
+            return (bytes_val / (1024 ** 2), 'MB')
+        elif unit == 'GB':
+            return (bytes_val / (1024 ** 3), 'GB')
+        else:  # Default to TB
+            return (bytes_val / (1024 ** 4), 'TB')
+    
+    def format_size_with_unit(self, bytes_val: int) -> str:
+        """
+        Format size in bytes to the configured unit string.
+        
+        Args:
+            bytes_val: Size in bytes
+            
+        Returns:
+            Formatted string (e.g., "2.01TB")
+        """
+        value, unit = self.bytes_to_unit(bytes_val)
+        return f"{value:.2f}{unit}"
+    
+    def build_aligned_table(self, user_data: List[Dict], include_header: bool = True) -> str:
+        """
+        Build a properly aligned table from user data.
+        
+        The table format:
+        Size                  Directory                       Owner            
+        ------------------------------------------------------------------------
+        2.01TB                harish                          Harish Kumar R
+        
+        Args:
+            user_data: List of dicts with user info and usage
+            include_header: Whether to include header row
+            
+        Returns:
+            Formatted table string
+        """
+        if not user_data:
+            return "No user data available."
+        
+        # Prepare row data
+        rows = []
+        for user in user_data:
+            dir_name = os.path.basename(user['directory'].rstrip('/'))
+            owner_name = self.get_user_full_name(user['username'])
+            size_str = self.format_size_with_unit(user['size_bytes'])
+            rows.append((size_str, dir_name, owner_name))
+        
+        # Calculate column widths (find max length in each column)
+        headers = ('Size', 'Directory', 'Owner')
+        
+        # Start with header lengths
+        col_widths = [len(h) for h in headers]
+        
+        # Check all rows for max width
+        for row in rows:
+            for i, cell in enumerate(row):
+                col_widths[i] = max(col_widths[i], len(cell))
+        
+        # Add padding (minimum 4 spaces between columns)
+        padding = 4
+        
+        # Build table lines
+        lines = []
+        
+        if include_header:
+            # Header row
+            header_line = ""
+            for i, header in enumerate(headers):
+                header_line += header.ljust(col_widths[i] + padding)
+            lines.append(header_line.rstrip())
+            
+            # Separator line
+            total_width = sum(col_widths) + (padding * (len(headers) - 1))
+            lines.append("-" * total_width)
+        
+        # Data rows
+        for row in rows:
+            row_line = ""
+            for i, cell in enumerate(row):
+                row_line += cell.ljust(col_widths[i] + padding)
+            lines.append(row_line.rstrip())
+        
+        return "\n".join(lines)
+    
+    def generate_user_disk_email(self, disk_config: dict, usage_stats: tuple, 
+                                  user_usage: List[Dict]) -> Tuple[str, str]:
+        """
+        Generate the user alert email subject and body for a single disk.
+        
+        This email is sent to all users of the disk when threshold is exceeded.
         
         Args:
             disk_config: Configuration for the disk
@@ -594,74 +731,129 @@ class DiskMonitor:
         # Determine data source
         data_source = "quota" if user_usage and user_usage[0].get('source') == 'quota' else "du"
         
-        # Prepare user data and calculate column widths
-        user_data = []
-        for user in user_usage:
-            dir_name = os.path.basename(user['directory'].rstrip('/'))
-            owner = user['username']
-            size_str = self.format_size_gb(user['size_gb'])
-            user_data.append((dir_name, owner, size_str))
-        
-        # Calculate max widths for dynamic alignment
-        min_dir_width = len("Directory")
-        min_owner_width = len("Owner")
-        min_size_width = len("Size")
-        
-        if user_data:
-            max_dir_width = max(min_dir_width, max(len(d[0]) for d in user_data))
-            max_owner_width = max(min_owner_width, max(len(d[1]) for d in user_data))
-            max_size_width = max(min_size_width, max(len(d[2]) for d in user_data))
-        else:
-            max_dir_width = min_dir_width
-            max_owner_width = min_owner_width
-            max_size_width = min_size_width
-        
-        # Add padding between columns (4 spaces)
-        col_gap = "    "
-        
         # Build email body
         body_lines = [
-            "=" * 55,
+            "=" * 72,
             "DISK USAGE ALERT",
-            "=" * 55,
+            "=" * 72,
             "",
             f"Disk Name:  {disk_name}",
             f"Path:       {disk_config['path']}",
-            f"Usage:      {percent:.1f}% ({self.format_size_gb(self.bytes_to_gb(used))} / {self.format_size_gb(self.bytes_to_gb(total))})",
-            f"Free:       {self.format_size_gb(self.bytes_to_gb(free))}",
+            f"Usage:      {percent:.1f}% ({self.format_size_with_unit(used)} / {self.format_size_with_unit(total)})",
+            f"Free:       {self.format_size_with_unit(free)}",
             f"Threshold:  {threshold}%",
             "",
-            "-" * 55,
-            f"USER USAGE BREAKDOWN (source: {data_source})",
-            "-" * 55,
+            "-" * 72,
+            f"DIRECTORY WISE USAGE (source: {data_source})",
+            "-" * 72,
             "",
-            # Dynamically aligned header
-            f"{'Directory':<{max_dir_width}}{col_gap}{'Owner':<{max_owner_width}}{col_gap}{'Size':>{max_size_width}}",
-            f"{'-' * max_dir_width}{col_gap}{'-' * max_owner_width}{col_gap}{'-' * max_size_width}",
         ]
         
-        # Add user data with dynamic alignment
-        for dir_name, owner, size_str in user_data:
-            body_lines.append(
-                f"{dir_name:<{max_dir_width}}{col_gap}{owner:<{max_owner_width}}{col_gap}{size_str:>{max_size_width}}"
-            )
+        # Add user data table
+        body_lines.append(self.build_aligned_table(user_usage))
         
         body_lines.extend([
             "",
-            "-" * 55,
+            "-" * 72,
             "",
             "ACTION REQUIRED: Please clean up unnecessary files.",
             "",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "=" * 55,
+            "=" * 72,
         ])
         
         body = "\n".join(body_lines)
         return subject, body
     
-    def get_recipient_list(self, user_usage: List[Dict]) -> List[str]:
+    def generate_admin_consolidated_email(self, disk_results: List[Dict]) -> Tuple[str, str]:
         """
-        Build the list of email recipients.
+        Generate the consolidated admin email with all disk information.
+        
+        For disks exceeding threshold: Shows disk usage + top 5 users
+        For disks below threshold: Shows only disk usage summary
+        
+        Args:
+            disk_results: List of disk result dicts containing:
+                - disk_config: Disk configuration
+                - usage_stats: Tuple of (total, used, free, percent)
+                - user_usage: List of user usage information
+                - exceeded: Boolean indicating if threshold was exceeded
+            
+        Returns:
+            Tuple of (subject, body)
+        """
+        # Count exceeded disks for subject
+        exceeded_count = sum(1 for r in disk_results if r['exceeded'])
+        total_count = len(disk_results)
+        
+        if exceeded_count > 0:
+            subject = f"[DISK MONITOR] {exceeded_count}/{total_count} disk(s) exceeding threshold"
+        else:
+            subject = f"[DISK MONITOR] All {total_count} disk(s) within limits"
+        
+        # Build email body
+        body_lines = [
+            "=" * 72,
+            "DISK USAGE CONSOLIDATED REPORT",
+            "=" * 72,
+            "",
+            f"Total Disks Monitored: {total_count}",
+            f"Disks Exceeding Threshold: {exceeded_count}",
+            f"Disks Within Limits: {total_count - exceeded_count}",
+            "",
+        ]
+        
+        # Process each disk
+        for disk_result in disk_results:
+            disk_config = disk_result['disk_config']
+            usage_stats = disk_result['usage_stats']
+            user_usage = disk_result['user_usage']
+            exceeded = disk_result['exceeded']
+            
+            total, used, free, percent = usage_stats
+            disk_name = disk_config.get('name', disk_config['path'])
+            threshold = disk_config.get('usage_limit_percent', 80)
+            
+            # Status indicator
+            status = "EXCEEDED" if exceeded else "OK"
+            
+            body_lines.extend([
+                "=" * 72,
+                f"DISK: {disk_name} [{status}]",
+                "=" * 72,
+                "",
+                f"Path:       {disk_config['path']}",
+                f"Usage:      {percent:.1f}% ({self.format_size_with_unit(used)} / {self.format_size_with_unit(total)})",
+                f"Free:       {self.format_size_with_unit(free)}",
+                f"Threshold:  {threshold}%",
+                "",
+            ])
+            
+            # For exceeded disks, show top 5 users
+            if exceeded and user_usage:
+                data_source = "quota" if user_usage[0].get('source') == 'quota' else "du"
+                top_5_users = user_usage[:5]
+                body_lines.extend([
+                    f"TOP 5 USERS BY USAGE (source: {data_source}):",
+                    "-" * 40,
+                    "",
+                ])
+                body_lines.append(self.build_aligned_table(top_5_users))
+                body_lines.append("")
+        
+        body_lines.extend([
+            "",
+            "-" * 72,
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "=" * 72,
+        ])
+        
+        body = "\n".join(body_lines)
+        return subject, body
+    
+    def get_user_recipients(self, user_usage: List[Dict]) -> List[str]:
+        """
+        Build the list of user email recipients (excludes administrators).
         
         Args:
             user_usage: List of user usage information
@@ -671,14 +863,8 @@ class DiskMonitor:
         """
         email_config = self.config.get('email', {})
         domain = email_config.get('domain', 'company.com')
-        # Use 'or []' to handle None values (when administrators is null in YAML)
-        administrators = email_config.get('administrators') or []
         
         recipients = set()
-        
-        # Add administrators
-        for admin in administrators:
-            recipients.add(admin)
         
         # Add users based on directory ownership
         for user in user_usage:
@@ -688,6 +874,18 @@ class DiskMonitor:
                 recipients.add(user_email)
         
         return list(recipients)
+    
+    def get_admin_recipients(self) -> List[str]:
+        """
+        Get the list of administrator email recipients.
+        
+        Returns:
+            List of administrator email addresses
+        """
+        email_config = self.config.get('email', {})
+        # Use 'or []' to handle None values (when administrators is null in YAML)
+        administrators = email_config.get('administrators') or []
+        return list(administrators)
     
     def send_email(self, subject: str, body: str, recipients: List[str]) -> bool:
         """
@@ -760,15 +958,15 @@ class DiskMonitor:
             self.logger.error(f"Error sending email: {e}")
             return False
     
-    def check_disk(self, disk_config: dict) -> bool:
+    def process_disk(self, disk_config: dict) -> Dict:
         """
-        Check a single disk and send alert if threshold is exceeded.
+        Process a single disk and collect usage information.
         
         Args:
             disk_config: Configuration for the disk to check
             
         Returns:
-            True if alert was sent, False otherwise
+            Dict containing disk results (disk_config, usage_stats, user_usage, exceeded)
         """
         disk_path = disk_config.get('path')
         disk_name = disk_config.get('name', disk_path)
@@ -776,28 +974,39 @@ class DiskMonitor:
         
         self.logger.info(f"Checking disk: {disk_name} ({disk_path})")
         
+        result = {
+            'disk_config': disk_config,
+            'usage_stats': None,
+            'user_usage': [],
+            'exceeded': False
+        }
+        
         # Get disk usage
         usage_stats = self.get_disk_usage(disk_path)
         if not usage_stats:
             self.logger.error(f"Could not get usage for disk: {disk_path}")
-            return False
+            return result
         
+        result['usage_stats'] = usage_stats
         total, used, free, percent = usage_stats
         self.logger.info(f"Disk usage: {percent:.1f}% (threshold: {threshold}%)")
         
         # Check if threshold exceeded
-        if percent < threshold:
-            self.logger.info(f"Disk usage below threshold, no alert needed")
-            return False
+        exceeded = percent >= threshold
+        result['exceeded'] = exceeded
         
-        self.logger.warning(f"Disk usage EXCEEDS threshold! ({percent:.1f}% >= {threshold}%)")
+        if exceeded:
+            self.logger.warning(f"Disk usage EXCEEDS threshold! ({percent:.1f}% >= {threshold}%)")
+        else:
+            self.logger.info(f"Disk usage below threshold, no user email needed")
         
-        # Calculate per-user usage
+        # Calculate per-user usage (always needed for admin email)
         self.logger.info("Calculating per-user usage...")
         import time
         start_time = time.time()
         
         user_usage = self.get_user_usage(disk_path)
+        result['user_usage'] = user_usage
         
         elapsed = time.time() - start_time
         self.logger.info(f"User usage calculation completed in {elapsed:.1f} seconds")
@@ -807,14 +1016,7 @@ class DiskMonitor:
         else:
             self.logger.info(f"Found {len(user_usage)} user directories")
         
-        # Generate email
-        subject, body = self.generate_alert_email(disk_config, usage_stats, user_usage)
-        
-        # Get recipients
-        recipients = self.get_recipient_list(user_usage)
-        
-        # Send email
-        return self.send_email(subject, body, recipients)
+        return result
     
     def run(self) -> int:
         """
@@ -833,21 +1035,49 @@ class DiskMonitor:
         
         # Log performance settings
         perf_config = self.config.get('performance', {})
-        self.logger.info(f"Performance settings: max_workers={perf_config.get('max_workers', 8)}, "
+        self.logger.info(f"Performance settings: max_workers={perf_config.get('max_workers', 'auto')}, "
                         f"use_quotas={perf_config.get('use_quotas', True)}")
         
-        alerts_sent = 0
+        disk_results = []
+        user_alerts_sent = 0
         errors = 0
         
+        # Process all disks and collect results
         for disk_config in disks:
             try:
-                if self.check_disk(disk_config):
-                    alerts_sent += 1
+                result = self.process_disk(disk_config)
+                if result['usage_stats'] is not None:
+                    disk_results.append(result)
+                    
+                    # Send user email if threshold exceeded
+                    if result['exceeded'] and result['user_usage']:
+                        subject, body = self.generate_user_disk_email(
+                            result['disk_config'],
+                            result['usage_stats'],
+                            result['user_usage']
+                        )
+                        recipients = self.get_user_recipients(result['user_usage'])
+                        if self.send_email(subject, body, recipients):
+                            user_alerts_sent += 1
+                else:
+                    errors += 1
             except Exception as e:
                 self.logger.error(f"Error checking disk {disk_config.get('path', 'unknown')}: {e}")
                 errors += 1
         
-        self.logger.info(f"Monitoring complete. Alerts sent: {alerts_sent}, Errors: {errors}")
+        # Send consolidated admin email
+        admin_recipients = self.get_admin_recipients()
+        if admin_recipients and disk_results:
+            self.logger.info("Sending consolidated admin email...")
+            subject, body = self.generate_admin_consolidated_email(disk_results)
+            if self.send_email(subject, body, admin_recipients):
+                self.logger.info("Admin consolidated email sent successfully")
+            else:
+                self.logger.error("Failed to send admin consolidated email")
+        elif not admin_recipients:
+            self.logger.info("No administrators configured, skipping admin email")
+        
+        self.logger.info(f"Monitoring complete. User alerts sent: {user_alerts_sent}, Errors: {errors}")
         
         return 1 if errors > 0 else 0
 
@@ -861,6 +1091,13 @@ def main():
 Examples:
   %(prog)s -c config.yaml
   %(prog)s -c /path/to/config.yaml --dry-run
+
+Email Types:
+  1. User Email: Sent to all users of a disk when threshold is exceeded
+     Contains full directory usage table for that disk
+  
+  2. Admin Email: Consolidated report sent to administrators
+     Contains all disks with top 5 users for exceeded disks
 
 Performance:
   The script uses disk quotas when available for instant results.
